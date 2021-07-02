@@ -175,6 +175,7 @@ public class PrintRestClientServiceImpl implements PrintRestClientService<Object
 			}
 
 			try {
+				printLogger.info("[REST] "+ builder.toUriString());
 				obj = restApiClient.postApi(builder.toUriString(), mediaType, requestedData, responseType);
 
 			} catch (Exception e) {

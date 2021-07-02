@@ -15,6 +15,8 @@ import io.mosip.print.exception.RegPrintAppException;
 import io.mosip.print.model.EventModel;
 import io.mosip.print.service.PrintService;
 
+import java.io.FileOutputStream;
+
 @RestController
 @RequestMapping(value = "/print")
 public class Print {
@@ -42,6 +44,11 @@ public class Print {
 	@PreAuthenticateContentAndVerifyIntent(secret = "${mosip.event.secret}", callback = "/v1/print/print/callback/notifyPrint", topic = "${mosip.event.topic}")
 	public ResponseEntity<String> handleSubscribeEvent(@RequestBody EventModel eventModel) throws Exception {
 		byte[] pdfBytes = printService.generateCard(eventModel);
+		try (FileOutputStream stream = new FileOutputStream("uiin.pdf")) {
+			stream.write(pdfBytes);
+		} catch (Exception ex){
+			ex.printStackTrace();
+		}
 		return new ResponseEntity<>("successfully printed", HttpStatus.OK);
 	}
 

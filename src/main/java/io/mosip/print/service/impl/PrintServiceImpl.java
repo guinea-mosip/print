@@ -225,25 +225,34 @@ public class PrintServiceImpl implements PrintService{
 	private String policyId;
 
 	public byte[] generateCard(EventModel eventModel) throws Exception {
-		Map<String, byte[]> byteMap = new HashMap<>();
-		String decodedCrdential = null;
-		String credential = null;
-		if (eventModel.getEvent().getDataShareUri() == null || eventModel.getEvent().getDataShareUri().isEmpty()) {
-			credential = eventModel.getEvent().getData().get("credential").toString();
-		} else {
-			String dataShareUrl = eventModel.getEvent().getDataShareUri();
-			URI dataShareUri = URI.create(dataShareUrl);
-			credential = restApiClient.getApi(dataShareUri, String.class);
+		try {
+			Map<String, byte[]> byteMap = new HashMap<>();
+			String decodedCrdential = null;
+			String credential = null;
+			if (eventModel.getEvent().getDataShareUri() == null || eventModel.getEvent().getDataShareUri().isEmpty()) {
+				credential = eventModel.getEvent().getData().get("credential").toString();
+			} else {
+				String dataShareUrl = eventModel.getEvent().getDataShareUri();
+				URI dataShareUri = URI.create(dataShareUrl);
+				credential = restApiClient.getApi(dataShareUri, String.class);
+			}
+			String ecryptionPin = eventModel.getEvent().getData().get("protectionKey").toString();
+			decodedCrdential = cryptoCoreUtil.decrypt(credential);
+			printLogger.info("----------------------------------------- decodedCrdential");
+			printLogger.info(decodedCrdential);
+			Map proofMap = new HashMap<String, String>();
+			proofMap = (Map) eventModel.getEvent().getData().get("proof");
+			String sign = proofMap.get("signature").toString();
+			printLogger.info("----------------------------------------- sign");
+			printLogger.info(sign);
+			byte[] pdfbytes = getDocuments(decodedCrdential,
+					eventModel.getEvent().getData().get("credentialType").toString(), ecryptionPin,
+					eventModel.getEvent().getTransactionId(), getSignature(sign, credential), "UIN", false).get(UIN_CARD_PDF);
+			return pdfbytes;
+		} catch(Exception ex){
+			ex.printStackTrace();
+			throw ex;
 		}
-		String ecryptionPin = eventModel.getEvent().getData().get("protectionKey").toString();
-		decodedCrdential = cryptoCoreUtil.decrypt(credential);
-		Map proofMap = new HashMap<String, String>();
-		proofMap = (Map) eventModel.getEvent().getData().get("proof");
-		String sign = proofMap.get("signature").toString();
-		byte[] pdfbytes = getDocuments(decodedCrdential,
-				eventModel.getEvent().getData().get("credentialType").toString(), ecryptionPin,
-				eventModel.getEvent().getTransactionId(), getSignature(sign, credential), "UIN", false).get("uinPdf");
-		return pdfbytes;
 	}
 
 	private String getSignature(String sign, String crdential) {
@@ -284,7 +293,6 @@ public class PrintServiceImpl implements PrintService{
 		String template = UIN_CARD_TEMPLATE;
 		byte[] pdfbytes = null;
 		try {
-
 			credentialSubject = getCrdentialSubject(credential);
 			org.json.JSONObject credentialSubjectJson = new org.json.JSONObject(credentialSubject);
 			org.json.JSONObject decryptedJson = decryptAttribute(credentialSubjectJson, encryptionPin, credential);
@@ -299,39 +307,39 @@ public class PrintServiceImpl implements PrintService{
 				InputStream uinArtifact = templateGenerator.getTemplate(template, attributes, primaryLang);
 				pdfbytes = uinCardGenerator.generateUinCard(uinArtifact, UinCardType.PDF,
 						password);
-
+				byteMap.put(UIN_CARD_PDF, pdfbytes);
 			} else {
 
-			boolean isPhotoSet = setApplicantPhoto(individualBiometric, attributes);
-			if (!isPhotoSet) {
-				printLogger.debug(LoggerFileConstant.SESSIONID.toString(),
-						LoggerFileConstant.REGISTRATIONID.toString(), uin +
-						PlatformErrorMessages.PRT_PRT_APPLICANT_PHOTO_NOT_SET.name());
-			}
-			setTemplateAttributes(decryptedJson.toString(), attributes);
-			attributes.put(IdType.UIN.toString(), uin);
+				boolean isPhotoSet = setApplicantPhoto(individualBiometric, attributes);
+				if (!isPhotoSet) {
+					printLogger.debug(LoggerFileConstant.SESSIONID.toString(),
+							LoggerFileConstant.REGISTRATIONID.toString(), uin +
+							PlatformErrorMessages.PRT_PRT_APPLICANT_PHOTO_NOT_SET.name());
+				}
+				setTemplateAttributes(decryptedJson.toString(), attributes);
+				attributes.put(IdType.UIN.toString(), uin);
 
-			byte[] textFileByte = createTextFile(decryptedJson.toString());
-			byteMap.put(UIN_TEXT_FILE, textFileByte);
+				byte[] textFileByte = createTextFile(decryptedJson.toString());
+				byteMap.put(UIN_TEXT_FILE, textFileByte);
 
-			boolean isQRcodeSet = setQrCode(decryptedJson.toString(), attributes);
-			if (!isQRcodeSet) {
-				printLogger.debug(LoggerFileConstant.SESSIONID.toString(),
-						LoggerFileConstant.REGISTRATIONID.toString(), uin +
-						PlatformErrorMessages.PRT_PRT_QRCODE_NOT_SET.name());
+				boolean isQRcodeSet = setQrCode(decryptedJson.toString(), attributes);
+				if (!isQRcodeSet) {
+					printLogger.debug(LoggerFileConstant.SESSIONID.toString(),
+							LoggerFileConstant.REGISTRATIONID.toString(), uin +
+							PlatformErrorMessages.PRT_PRT_QRCODE_NOT_SET.name());
+				}
+				// getting template and placing original valuespng
+				InputStream uinArtifact = templateGenerator.getTemplate(template, attributes, primaryLang);
+				if (uinArtifact == null) {
+					printLogger.error(LoggerFileConstant.SESSIONID.toString(),
+							LoggerFileConstant.REGISTRATIONID.toString(), "UIN" +
+							PlatformErrorMessages.PRT_TEM_PROCESSING_FAILURE.name());
+					throw new TemplateProcessingFailureException(
+							PlatformErrorMessages.PRT_TEM_PROCESSING_FAILURE.getCode());
+				}
+				pdfbytes = uinCardGenerator.generateUinCard(uinArtifact, UinCardType.PDF, password);
+				byteMap.put(UIN_CARD_PDF, pdfbytes);
 			}
-			// getting template and placing original valuespng
-			InputStream uinArtifact = templateGenerator.getTemplate(template, attributes, primaryLang);
-			if (uinArtifact == null) {
-				printLogger.error(LoggerFileConstant.SESSIONID.toString(),
-						LoggerFileConstant.REGISTRATIONID.toString(), "UIN" +
-						PlatformErrorMessages.PRT_TEM_PROCESSING_FAILURE.name());
-				throw new TemplateProcessingFailureException(
-						PlatformErrorMessages.PRT_TEM_PROCESSING_FAILURE.getCode());
-			}
-			pdfbytes = uinCardGenerator.generateUinCard(uinArtifact, UinCardType.PDF, password);
-
-		}
 			printStatusUpdate(requestId, pdfbytes, credentialType);
 			isTransactionSuccessful = true;
 
@@ -343,9 +351,7 @@ public class PrintServiceImpl implements PrintService{
 					"UIN", PlatformErrorMessages.PRT_PRT_QRCODE_NOT_GENERATED.name() + e.getMessage()
 							+ ExceptionUtils.getStackTrace(e));
 			throw new PDFGeneratorException(e.getErrorCode(), e.getErrorText());
-
 		}
-
 		catch (QrcodeGenerationException e) {
 			e.printStackTrace();
 			description.setMessage(PlatformErrorMessages.PRT_PRT_QR_CODE_GENERATION_ERROR.getMessage());
@@ -355,7 +361,6 @@ public class PrintServiceImpl implements PrintService{
 					PlatformErrorMessages.PRT_PRT_QRCODE_NOT_GENERATED.name() + ExceptionUtils.getStackTrace(e));
 			throw new PDFGeneratorException(PDFGeneratorExceptionCodeConstant.PDF_EXCEPTION.getErrorCode(),
 					e.getErrorText());
-
 		} catch (UINNotFoundInDatabase e) {
 			e.printStackTrace();
 			description.setMessage(PlatformErrorMessages.PRT_PRT_UIN_NOT_FOUND_IN_DATABASE.getMessage());
@@ -366,7 +371,6 @@ public class PrintServiceImpl implements PrintService{
 					PlatformErrorMessages.PRT_PRT_UIN_NOT_FOUND_IN_DATABASE.name() + ExceptionUtils.getStackTrace(e));
 			throw new PDFGeneratorException(PDFGeneratorExceptionCodeConstant.PDF_EXCEPTION.getErrorCode(),
 					e.getErrorText());
-
 		} catch (TemplateProcessingFailureException e) {
 			e.printStackTrace();
 			description.setMessage(PlatformErrorMessages.PRT_TEM_PROCESSING_FAILURE.getMessage());
@@ -376,7 +380,6 @@ public class PrintServiceImpl implements PrintService{
 					"UIN",
 					PlatformErrorMessages.PRT_TEM_PROCESSING_FAILURE.name() + ExceptionUtils.getStackTrace(e));
 			throw new TemplateProcessingFailureException(PlatformErrorMessages.PRT_TEM_PROCESSING_FAILURE.getMessage());
-
 		} catch (PDFGeneratorException e) {
 			e.printStackTrace();
 			description.setMessage(PlatformErrorMessages.PRT_PRT_PDF_NOT_GENERATED.getMessage());
@@ -387,7 +390,6 @@ public class PrintServiceImpl implements PrintService{
 					PlatformErrorMessages.PRT_PRT_PDF_NOT_GENERATED.name() + ExceptionUtils.getStackTrace(e));
 			throw new PDFGeneratorException(PDFGeneratorExceptionCodeConstant.PDF_EXCEPTION.getErrorCode(),
 					e.getErrorText());
-
 		} catch (PDFSignatureException e) {
 			e.printStackTrace();
 			description.setMessage(PlatformErrorMessages.PRT_PRT_PDF_SIGNATURE_EXCEPTION.getMessage());
@@ -397,7 +399,6 @@ public class PrintServiceImpl implements PrintService{
 					"UIN".toString(),
 					PlatformErrorMessages.PRT_PRT_PDF_SIGNATURE_EXCEPTION.name() + ExceptionUtils.getStackTrace(e));
 			throw new PDFSignatureException(PlatformErrorMessages.PRT_PRT_PDF_SIGNATURE_EXCEPTION.getMessage());
-
 		} catch (Exception ex) {
 			ex.printStackTrace();
 			description.setMessage(PlatformErrorMessages.PRT_PRT_PDF_GENERATION_FAILED.getMessage());
@@ -406,7 +407,6 @@ public class PrintServiceImpl implements PrintService{
 					"UIN", description + ex.getMessage() + ExceptionUtils.getStackTrace(ex));
 			throw new PDFGeneratorException(PDFGeneratorExceptionCodeConstant.PDF_EXCEPTION.getErrorCode(),
 					ex.getMessage() + ExceptionUtils.getStackTrace(ex));
-
 		} finally {
 			String eventId = "";
 			String eventName = "";

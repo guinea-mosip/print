@@ -85,11 +85,11 @@ public class RestApiClient {
 		T result = null;
 		try {
 			restTemplate = getRestTemplate();
+			logger.info("[REST] "+ uri.toString());
 			result = (T) restTemplate.exchange(uri, HttpMethod.GET, setRequestHeader(null, null), responseType)
 					.getBody();
 		} catch (Exception e) {
-			logger.error(LoggerFileConstant.SESSIONID.toString(), LoggerFileConstant.APPLICATIONID.toString(),
-					LoggerFileConstant.APPLICATIONID.toString(), e.getMessage() + ExceptionUtils.getStackTrace(e));
+			logger.error(e.getMessage() + ExceptionUtils.getStackTrace(e));
 			throw e;
 		}
 		return result;
